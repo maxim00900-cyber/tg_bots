@@ -1,10 +1,13 @@
-﻿from aiogram import F, Router
+﻿import logging
+
+from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart, Command
 
 from app import keyboards as kb
 from app import texts
 import app.database.requests as rq
+from app.cryptobot import get_shared_crypto_bot_client
 
 router = Router()
 
@@ -39,7 +42,83 @@ async def callback_rub(callback: CallbackQuery):
 @router.callback_query(F.data == "pay_usdt")
 async def callback_usdt(callback: CallbackQuery):
     await callback.answer()
-    await callback.message.answer(texts.PAY_USDT_TEXT)
+    user = await rq.get_user(callback.from_user.id)
+    if user and user.is_paid:
+        await callback.message.answer(texts.ACCESS_TEXT)
+        return
+
+    client = get_shared_crypto_bot_client()
+    if user and user.invoice_id:
+        try:
+            invoice = await client.get_invoice(user.invoice_id)
+        except RuntimeError as exc:
+            logging.exception("CryptoBot get_invoice failed: %s", exc)
+            invoice = None
+
+        if invoice:
+            status = invoice.get("status")
+            if status == "paid":
+                await rq.mark_paid_by_invoice(user.invoice_id, "crypto")
+                await callback.message.answer(texts.ACCESS_TEXT)
+                return
+            if status == "active":
+                pay_url = invoice.get("pay_url")
+                if pay_url:
+                    await callback.message.answer(
+                        texts.PAY_USDT_TEXT.format(pay_url=pay_url),
+                        reply_markup=kb.check_payment_kb(user.invoice_id),
+                    )
+                    return
+
+    try:
+        invoice = await client.create_invoice(
+            amount=texts.PRICE_USDT,
+            asset="USDT",
+            description="Доступ к сервису",
+            payload=str(callback.from_user.id),
+        )
+    except RuntimeError as exc:
+        logging.exception("CryptoBot create_invoice failed: %s", exc)
+        await callback.message.answer(texts.PAYMENT_ERROR_TEXT)
+        return
+
+    await rq.set_invoice(callback.from_user.id, invoice["invoice_id"], "crypto")
+    pay_url = invoice["pay_url"]
+    await callback.message.answer(
+        texts.PAY_USDT_TEXT.format(pay_url=pay_url),
+        reply_markup=kb.check_payment_kb(invoice["invoice_id"]),
+    )
+
+
+@router.callback_query(F.data.startswith("check_invoice:"))
+async def callback_check_invoice(callback: CallbackQuery):
+    await callback.answer()
+    invoice_id = callback.data.split(":", 1)[1]
+    user = await rq.get_user(callback.from_user.id)
+    if not user or user.invoice_id != str(invoice_id):
+        await callback.message.answer(texts.PAYMENT_ERROR_TEXT)
+        return
+
+    client = get_shared_crypto_bot_client()
+    try:
+        invoice = await client.get_invoice(invoice_id)
+    except RuntimeError as exc:
+        logging.exception("CryptoBot get_invoice failed: %s", exc)
+        await callback.message.answer(texts.PAYMENT_ERROR_TEXT)
+        return
+
+    if not invoice:
+        await callback.message.answer(texts.PAYMENT_ERROR_TEXT)
+        return
+
+    status = invoice.get("status")
+    if status == "paid":
+        await rq.mark_paid_by_invoice(invoice_id, "crypto")
+        await callback.message.answer(texts.ACCESS_TEXT)
+    elif status == "expired":
+        await callback.message.answer(texts.PAYMENT_EXPIRED_TEXT)
+    else:
+        await callback.message.answer(texts.PAYMENT_PENDING_TEXT)
 
 
 @router.message()

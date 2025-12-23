@@ -23,3 +23,15 @@ payment_kb = InlineKeyboardMarkup(
         [InlineKeyboardButton(text=texts.INLINE_PAY_USDT, callback_data="pay_usdt")],
     ]
 )
+
+def check_payment_kb(invoice_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=texts.INLINE_CHECK_PAYMENT,
+                    callback_data=f"check_invoice:{invoice_id}",
+                )
+            ]
+        ]
+    )

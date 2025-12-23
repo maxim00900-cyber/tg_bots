@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from app.routers import router
 from app.database.models import async_main
+from app.cryptobot import close_crypto_bot_client
 
 
 async def main():
@@ -23,7 +24,10 @@ async def main():
     bot = Bot(token)
     dp = Dispatcher()
     dp.include_router(router)
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await close_crypto_bot_client()
 
 
 if __name__ == "__main__":

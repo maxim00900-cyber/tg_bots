@@ -1,6 +1,8 @@
 ﻿PRICE_RUB = 269
 PRICE_CURRENCY = "₽"
 PRICE_TEXT = f"{PRICE_RUB} {PRICE_CURRENCY}"
+PRICE_USDT = 3.0
+PRICE_USDT_TEXT = f"{PRICE_USDT} USDT"
 
 WELCOME_TEXT = (
     "Привет! 👋\n"
@@ -51,3 +53,4 @@ PLACEHOLDER = "Выберите пункт меню..."
 
 INLINE_PAY_RUB = "💰 В рублях"
 INLINE_PAY_USDT = "🪙 В криптовалюте"
+INLINE_CHECK_PAYMENT = "✅ Проверить оплату"
