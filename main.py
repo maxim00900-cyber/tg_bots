@@ -21,12 +21,15 @@ async def main():
 
     await async_main()
 
-    bot = Bot(token)
+    bot = None
     dp = Dispatcher()
     dp.include_router(router)
     try:
+        bot = Bot(token)
         await dp.start_polling(bot)
     finally:
+        if bot:
+            await bot.session.close()
         await close_crypto_bot_client()
 
 
