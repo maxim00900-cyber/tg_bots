@@ -31,20 +31,25 @@ def user_kb(is_paid: bool) -> ReplyKeyboardMarkup:
     return paid_kb if is_paid else main_kb
 
 
-def admin_kb(is_admin: bool) -> ReplyKeyboardMarkup:
-    keyboard = [[KeyboardButton(text=texts.BUTTON_QUEUE)]]
-    if is_admin:
-        keyboard.append(
-            [
-                KeyboardButton(text=texts.BUTTON_MOD_ADD),
-                KeyboardButton(text=texts.BUTTON_MOD_REMOVE),
-            ]
-        )
-    return ReplyKeyboardMarkup(
-        keyboard=keyboard,
-        resize_keyboard=True,
-        input_field_placeholder=texts.PLACEHOLDER,
-    )
+admin_kb = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text=texts.BUTTON_ADMIN_APPROVE_HELP),
+            KeyboardButton(text=texts.BUTTON_ADMIN_DENY_HELP),
+        ],
+        [
+            KeyboardButton(text=texts.BUTTON_ADMIN_BAN_HELP),
+            KeyboardButton(text=texts.BUTTON_ADMIN_UNBAN_HELP),
+        ],
+        [
+            KeyboardButton(text=texts.BUTTON_ADMIN_ADD_HELP),
+            KeyboardButton(text=texts.BUTTON_ADMIN_REMOVE_HELP),
+        ],
+    ],
+    resize_keyboard=True,
+    input_field_placeholder=texts.PLACEHOLDER,
+)
+
 
 payment_kb = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -58,6 +63,13 @@ def rub_payment_kb(pay_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=texts.INLINE_PAY_QR, url=pay_url)],
+        ]
+    )
+
+
+def receipt_sent_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
             [
                 InlineKeyboardButton(
                     text=texts.INLINE_SENT_RECEIPT,
@@ -97,33 +109,14 @@ def admin_action_kb(user_id: int) -> InlineKeyboardMarkup:
                     text=texts.BUTTON_DENY,
                     callback_data=f"admin_deny:{user_id}",
                 ),
-            ]
+            ],
+            [
+                InlineKeyboardButton(
+                    text=texts.BUTTON_BAN,
+                    callback_data=f"admin_ban:{user_id}",
+                )
+            ],
         ]
     )
 
 
-def admin_queue_nav_kb(
-    offset: int,
-    limit: int,
-    total: int,
-) -> InlineKeyboardMarkup | None:
-    buttons: list[InlineKeyboardButton] = []
-    prev_offset = offset - limit
-    next_offset = offset + limit
-    if prev_offset >= 0:
-        buttons.append(
-            InlineKeyboardButton(
-                text=texts.ADMIN_QUEUE_PREV_TEXT,
-                callback_data=f"admin_queue:{prev_offset}",
-            )
-        )
-    if next_offset < total:
-        buttons.append(
-            InlineKeyboardButton(
-                text=texts.ADMIN_QUEUE_NEXT_TEXT,
-                callback_data=f"admin_queue:{next_offset}",
-            )
-        )
-    if not buttons:
-        return None
-    return InlineKeyboardMarkup(inline_keyboard=[buttons])

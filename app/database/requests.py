@@ -1,15 +1,9 @@
 from datetime import datetime
 
-from sqlalchemy import select, func
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.models import User, async_session
-from app.config import get_settings
-
-
-ROLE_ADMIN = "admin"
-ROLE_MODERATOR = "moderator"
-ROLE_USER = "user"
 
 
 async def _get_user(session: AsyncSession, user_id: int) -> User | None:
@@ -47,25 +41,21 @@ async def set_user(user_id: int) -> None:
             await session.commit()
 
 
-async def set_role(user_id: int, role: str) -> User:
-    async with async_session() as session:
-        user, _ = await _get_or_create_user(session, user_id)
-        user.role = role
-        await session.commit()
-        return user
-
-
-async def get_role(user_id: int) -> str:
-    async with async_session() as session:
-        user = await _get_user(session, user_id)
-        if not user or not user.role:
-            return ROLE_USER
-        return user.role
-
-
 async def get_user(user_id: int) -> User | None:
     async with async_session() as session:
         return await _get_user(session, user_id)
+
+
+async def is_user_banned(user_id: int) -> bool:
+    async with async_session() as session:
+        user = await _get_user(session, user_id)
+        return bool(user and user.is_banned)
+
+
+async def is_user_admin(user_id: int) -> bool:
+    async with async_session() as session:
+        user = await _get_user(session, user_id)
+        return bool(user and user.is_admin)
 
 
 async def set_invoice(user_id: int, invoice_id: str, paid_method: str) -> None:
@@ -80,6 +70,48 @@ async def set_rub_pending(user_id: int) -> None:
         user, _ = await _get_or_create_user(session, user_id)
         _set_payment_pending(user, "rub", None)
         await session.commit()
+
+
+async def add_admin(user_id: int) -> User:
+    async with async_session() as session:
+        user, _ = await _get_or_create_user(session, user_id)
+        user.is_admin = True
+        await session.commit()
+        return user
+
+
+async def remove_admin(user_id: int) -> User | None:
+    async with async_session() as session:
+        user = await _get_user(session, user_id)
+        if not user:
+            return None
+        user.is_admin = False
+        await session.commit()
+        return user
+
+
+async def get_admin_ids() -> list[int]:
+    async with async_session() as session:
+        result = await session.scalars(select(User.user_id).where(User.is_admin.is_(True)))
+        return list(result)
+
+
+async def ban_user(user_id: int) -> User:
+    async with async_session() as session:
+        user, _ = await _get_or_create_user(session, user_id)
+        user.is_banned = True
+        await session.commit()
+        return user
+
+
+async def unban_user(user_id: int) -> User | None:
+    async with async_session() as session:
+        user = await _get_user(session, user_id)
+        if not user:
+            return None
+        user.is_banned = False
+        await session.commit()
+        return user
 
 
 async def mark_rub_receipt_sent(user_id: int) -> User | None:
@@ -108,14 +140,27 @@ async def mark_paid_by_invoice(invoice_id: str, paid_method: str) -> User | None
 
 async def approve_by_staff(user_id: int, staff_id: int, paid_method: str) -> User | None:
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.user_id == user_id))
+        paid_at = datetime.utcnow()
+        result = await session.execute(
+            update(User)
+            .where(
+                User.user_id == user_id,
+                User.decision_at.is_(None),
+                User.payment_status.in_(["pending", "receipt_sent"]),
+            )
+            .values(
+                is_paid=True,
+                payment_status="paid",
+                paid_method=paid_method,
+                paid_at=paid_at,
+                decision_by=staff_id,
+                decision_at=paid_at,
+            )
+            .returning(User)
+        )
+        user = result.scalar_one_or_none()
         if not user:
             return None
-        _set_payment_status(user, "paid")
-        user.paid_method = paid_method
-        user.paid_at = datetime.utcnow()
-        user.decision_by = staff_id
-        user.decision_at = datetime.utcnow()
         await session.commit()
         return user
 
@@ -155,51 +200,28 @@ async def mark_failed_by_user(user_id: int, paid_method: str | None = None) -> U
 
 async def deny_by_staff(user_id: int, staff_id: int, paid_method: str | None = None) -> User | None:
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.user_id == user_id))
+        values = {
+            "is_paid": False,
+            "payment_status": "failed",
+            "paid_at": None,
+            "invoice_id": None,
+            "decision_by": staff_id,
+            "decision_at": datetime.utcnow(),
+        }
+        if paid_method is not None:
+            values["paid_method"] = paid_method
+        result = await session.execute(
+            update(User)
+            .where(
+                User.user_id == user_id,
+                User.decision_at.is_(None),
+                User.payment_status.in_(["pending", "receipt_sent"]),
+            )
+            .values(**values)
+            .returning(User)
+        )
+        user = result.scalar_one_or_none()
         if not user:
             return None
-        _set_payment_status(user, "failed")
-        user.paid_at = None
-        user.invoice_id = None
-        if paid_method is not None:
-            user.paid_method = paid_method
-        user.decision_by = staff_id
-        user.decision_at = datetime.utcnow()
         await session.commit()
         return user
-
-
-async def get_users_by_roles(roles: list[str]) -> list[User]:
-    async with async_session() as session:
-        result = await session.scalars(select(User).where(User.role.in_(roles)))
-        return list(result)
-
-
-async def get_staff_ids() -> list[int]:
-    settings = get_settings()
-    staff_ids = set(settings.admin_chat_ids)
-    users = await get_users_by_roles([ROLE_ADMIN, ROLE_MODERATOR])
-    for user in users:
-        staff_ids.add(user.user_id)
-    return sorted(staff_ids)
-
-
-async def get_pending_users_page(limit: int = 10, offset: int = 0) -> list[User]:
-    async with async_session() as session:
-        result = await session.scalars(
-            select(User)
-            .where(User.payment_status == "receipt_sent", User.decision_at.is_(None))
-            .order_by(User.id.desc())
-            .offset(offset)
-            .limit(limit)
-        )
-        return list(result)
-
-
-async def count_pending_users() -> int:
-    async with async_session() as session:
-        return await session.scalar(
-            select(func.count())
-            .select_from(User)
-            .where(User.payment_status == "receipt_sent", User.decision_at.is_(None))
-        )

@@ -125,7 +125,7 @@ async def check_crypto_invoice(user_id: int, invoice_id: str) -> CryptoCheckResu
 
     invoice = await _fetch_crypto_invoice(invoice_id)
     if invoice is None:
-        await rq.mark_failed_by_invoice(invoice_id)
+        logging.warning("CryptoBot get_invoice returned no data for invoice_id=%s", invoice_id)
         return CryptoCheckResult(status=CryptoCheckStatus.ERROR)
     if not invoice:
         await rq.mark_failed_by_invoice(invoice_id)

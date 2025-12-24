@@ -1,8 +1,9 @@
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, ReplyKeyboardRemove
 
 from app import keyboards as kb
 from app import texts
+import app.database.requests as rq
 from app.services.payments import (
     CryptoCheckStatus,
     CryptoInvoiceStatus,
@@ -22,6 +23,9 @@ async def _safe_answer(callback: CallbackQuery, text: str, reply_markup=None) ->
 @router.callback_query(F.data == "pay_usdt")
 async def callback_usdt(callback: CallbackQuery) -> None:
     await callback.answer()
+    if await rq.is_user_banned(callback.from_user.id):
+        await _safe_answer(callback, texts.BANNED_TEXT, reply_markup=ReplyKeyboardRemove())
+        return
     result = await create_crypto_invoice(callback.from_user.id, texts.PRICE_USDT)
     if result.status == CryptoInvoiceStatus.PAID:
         await _safe_answer(callback, texts.ACCESS_TEXT, reply_markup=kb.user_kb(True))
@@ -53,6 +57,9 @@ async def callback_usdt(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("check_invoice:"))
 async def callback_check_invoice(callback: CallbackQuery) -> None:
     await callback.answer()
+    if await rq.is_user_banned(callback.from_user.id):
+        await _safe_answer(callback, texts.BANNED_TEXT, reply_markup=ReplyKeyboardRemove())
+        return
     invoice_id = callback.data.split(":", 1)[1]
     result = await check_crypto_invoice(callback.from_user.id, invoice_id)
     if result.status == CryptoCheckStatus.INVALID_USER:

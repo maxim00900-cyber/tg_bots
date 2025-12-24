@@ -9,22 +9,16 @@ def is_admin(user_id: int | None) -> bool:
     return user_id in settings.admin_chat_ids
 
 
-async def get_user_role(user_id: int | None) -> str:
-    if user_id is None:
-        return rq.ROLE_USER
-    if is_admin(user_id):
-        return rq.ROLE_ADMIN
-    return await rq.get_role(user_id)
-
-
-async def is_moderator(user_id: int | None) -> bool:
-    return (await get_user_role(user_id)) == rq.ROLE_MODERATOR
-
-
 async def is_staff(user_id: int | None) -> bool:
-    role = await get_user_role(user_id)
-    return role in (rq.ROLE_ADMIN, rq.ROLE_MODERATOR)
+    if user_id is None:
+        return False
+    if is_admin(user_id):
+        return True
+    return await rq.is_user_admin(user_id)
 
 
 async def get_staff_ids() -> list[int]:
-    return await rq.get_staff_ids()
+    settings = get_settings()
+    admin_ids = set(settings.admin_chat_ids)
+    admin_ids.update(await rq.get_admin_ids())
+    return sorted(admin_ids)
