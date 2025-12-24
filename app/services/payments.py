@@ -69,14 +69,12 @@ class RubPaymentResult:
 @dataclass(slots=True)
 class RubReceiptSentResult:
     status: RubReceiptSentStatus
-    admin_chat_ids: tuple[int, ...] | None = None
     message: str | None = None
 
 
 @dataclass(slots=True)
 class RubReceiptUploadResult:
     status: RubReceiptUploadStatus
-    admin_chat_ids: tuple[int, ...] | None = None
 
 
 async def create_crypto_invoice(user_id: int, price: float) -> CryptoInvoiceResult:
@@ -165,21 +163,16 @@ def build_rub_receipt_sent(
     last_name: str | None,
     username: str | None,
 ) -> RubReceiptSentResult:
-    admin_chat_ids = _get_admin_chat_ids()
-    if not admin_chat_ids:
-        return RubReceiptSentResult(status=RubReceiptSentStatus.DISABLED)
-
     name = " ".join(part for part in [first_name, last_name] if part)
-    username_display = f"@{username}" if username else "\u0431\u0435\u0437 username"
+    username_display = f"@{username}" if username else "без username"
     message = (
-        "\u041d\u043e\u0432\u0430\u044f \u043e\u043f\u043b\u0430\u0442\u0430 \u0432 \u0440\u0443\u0431\u043b\u044f\u0445.\n"
-        f"\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c: {name} ({username_display})\n"
+        "Новая оплата в рублях.\n"
+        f"Пользователь: {name} ({username_display})\n"
         f"ID: {user_id}\n"
-        "\u041f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c \u043d\u0430\u0436\u0430\u043b \u00ab\u042f \u043e\u0442\u043f\u0440\u0430\u0432\u0438\u043b \u0447\u0435\u043a\u00bb."
+        "Пользователь нажал «Я отправил чек»."
     )
     return RubReceiptSentResult(
         status=RubReceiptSentStatus.READY,
-        admin_chat_ids=admin_chat_ids,
         message=message,
     )
 
@@ -189,13 +182,8 @@ async def check_rub_receipt_upload(user_id: int) -> RubReceiptUploadResult:
     if not _user_needs_rub_receipt(user):
         return RubReceiptUploadResult(status=RubReceiptUploadStatus.IGNORED)
 
-    admin_chat_ids = _get_admin_chat_ids()
-    if not admin_chat_ids:
-        return RubReceiptUploadResult(status=RubReceiptUploadStatus.DISABLED)
-
     return RubReceiptUploadResult(
         status=RubReceiptUploadStatus.FORWARDED,
-        admin_chat_ids=admin_chat_ids,
     )
 
 
@@ -205,7 +193,7 @@ async def _create_crypto_invoice(user_id: int, price: float) -> dict[str, Any] |
         return await client.create_invoice(
             amount=price,
             asset="USDT",
-            description="\u0414\u043e\u0441\u0442\u0443\u043f \u043a \u0441\u0435\u0440\u0432\u0438\u0441\u0443",
+            description="Доступ к сервису",
             payload=str(user_id),
         )
     except CRYPTOBOT_ERRORS as exc:
@@ -222,13 +210,6 @@ async def _fetch_crypto_invoice(invoice_id: str) -> dict[str, Any] | None:
         return None
 
 
-def _get_admin_chat_ids() -> tuple[int, ...]:
-    settings = get_settings()
-    if not settings.admin_chat_ids:
-        logging.error("ADMIN_CHAT_ID is not configured")
-    return settings.admin_chat_ids
-
-
 def _get_rub_pay_url() -> str | None:
     settings = get_settings()
     if not settings.rub_pay_url:
@@ -240,4 +221,4 @@ def _user_needs_rub_receipt(user: User | None) -> bool:
     if not user or user.paid_method != "rub":
         return False
     status = user.payment_status
-    return bool(not user.is_paid and status in (None, "pending"))
+    return bool(not user.is_paid and status in (None, "pending", "receipt_sent"))

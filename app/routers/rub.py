@@ -11,9 +11,23 @@ from app.services.payments import (
     check_rub_receipt_upload,
     start_rub_payment,
 )
-from app.routers.admin_utils import is_admin
+from app.routers.admin_utils import get_staff_ids
+import app.database.requests as rq
 
 router = Router()
+
+
+def _format_sender_info(message: Message) -> str:
+    user = message.from_user
+    if not user:
+        return "Чек от неизвестного пользователя."
+    name = " ".join(part for part in [user.first_name, user.last_name] if part)
+    username = f"@{user.username}" if user.username else "без username"
+    return (
+        "Чек от пользователя:\n"
+        f"{name} ({username})\n"
+        f"ID: {user.id}"
+    )
 
 
 async def _safe_answer(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -50,21 +64,18 @@ async def callback_rub_receipt_sent(callback: CallbackQuery) -> None:
         callback.from_user.last_name,
         callback.from_user.username,
     )
-    if (
-        result.status == RubReceiptSentStatus.DISABLED
-        or not result.admin_chat_ids
-        or not any(is_admin(admin_id) for admin_id in result.admin_chat_ids)
-    ):
+    await rq.mark_rub_receipt_sent(callback.from_user.id)
+    staff_ids = await get_staff_ids()
+    if result.status == RubReceiptSentStatus.DISABLED or not staff_ids:
         await _safe_answer(callback, texts.PAYMENT_RUB_DISABLED_TEXT)
         return
 
-    for admin_id in result.admin_chat_ids:
-        if is_admin(admin_id):
-            await callback.bot.send_message(
-                admin_id,
-                result.message or "",
-                reply_markup=kb.admin_action_kb(callback.from_user.id),
-            )
+    for staff_id in staff_ids:
+        await callback.bot.send_message(
+            staff_id,
+            result.message or "",
+            reply_markup=kb.admin_action_kb(callback.from_user.id),
+        )
     await _safe_answer(callback, texts.RECEIPT_SENT_TEXT)
 
 
@@ -74,15 +85,12 @@ async def receipt_message(message: Message) -> None:
     if result.status == RubReceiptUploadStatus.IGNORED:
         return
 
-    if (
-        result.status == RubReceiptUploadStatus.DISABLED
-        or not result.admin_chat_ids
-        or not any(is_admin(admin_id) for admin_id in result.admin_chat_ids)
-    ):
+    staff_ids = await get_staff_ids()
+    if result.status == RubReceiptUploadStatus.DISABLED or not staff_ids:
         await message.answer(texts.PAYMENT_RUB_DISABLED_TEXT)
         return
 
-    for admin_id in result.admin_chat_ids:
-        if is_admin(admin_id):
-            await message.copy_to(admin_id)
+    for staff_id in staff_ids:
+        await message.bot.send_message(staff_id, _format_sender_info(message))
+        await message.copy_to(staff_id)
     await message.answer(texts.RECEIPT_RECEIVED_TEXT)

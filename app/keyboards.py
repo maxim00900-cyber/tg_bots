@@ -26,17 +26,25 @@ paid_kb = ReplyKeyboardMarkup(
     input_field_placeholder=texts.PLACEHOLDER,
 )
 
+
 def user_kb(is_paid: bool) -> ReplyKeyboardMarkup:
     return paid_kb if is_paid else main_kb
 
-admin_kb = ReplyKeyboardMarkup(
-    keyboard=[
-        [KeyboardButton(text=texts.BUTTON_APPROVE)],
-        [KeyboardButton(text=texts.BUTTON_DENY)],
-    ],
-    resize_keyboard=True,
-    input_field_placeholder=texts.PLACEHOLDER,
-)
+
+def admin_kb(is_admin: bool) -> ReplyKeyboardMarkup:
+    keyboard = [[KeyboardButton(text=texts.BUTTON_QUEUE)]]
+    if is_admin:
+        keyboard.append(
+            [
+                KeyboardButton(text=texts.BUTTON_MOD_ADD),
+                KeyboardButton(text=texts.BUTTON_MOD_REMOVE),
+            ]
+        )
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+        input_field_placeholder=texts.PLACEHOLDER,
+    )
 
 payment_kb = InlineKeyboardMarkup(
     inline_keyboard=[
@@ -92,3 +100,30 @@ def admin_action_kb(user_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def admin_queue_nav_kb(
+    offset: int,
+    limit: int,
+    total: int,
+) -> InlineKeyboardMarkup | None:
+    buttons: list[InlineKeyboardButton] = []
+    prev_offset = offset - limit
+    next_offset = offset + limit
+    if prev_offset >= 0:
+        buttons.append(
+            InlineKeyboardButton(
+                text=texts.ADMIN_QUEUE_PREV_TEXT,
+                callback_data=f"admin_queue:{prev_offset}",
+            )
+        )
+    if next_offset < total:
+        buttons.append(
+            InlineKeyboardButton(
+                text=texts.ADMIN_QUEUE_NEXT_TEXT,
+                callback_data=f"admin_queue:{next_offset}",
+            )
+        )
+    if not buttons:
+        return None
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])

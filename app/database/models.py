@@ -22,10 +22,13 @@ class User(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
 
     is_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    role: Mapped[str | None] = mapped_column(String(20), nullable=True)
     payment_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     paid_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(nullable=True)
     invoice_id: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
+    decision_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    decision_at: Mapped[datetime | None] = mapped_column(nullable=True)
 
 
 async def async_main() -> None:

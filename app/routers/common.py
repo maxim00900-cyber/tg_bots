@@ -5,20 +5,34 @@ from aiogram.types import Message
 from app import keyboards as kb
 from app import texts
 import app.database.requests as rq
-from app.routers.admin_utils import is_admin
+from app.routers.admin_utils import is_admin, is_staff
 
 router = Router()
+
+
+async def _reply_admin(message: Message) -> bool:
+    if await is_staff(message.from_user.id if message.from_user else None):
+        await message.answer(
+            texts.ADMIN_WELCOME_TEXT,
+            reply_markup=kb.admin_kb(
+                is_admin(message.from_user.id if message.from_user else None)
+            ),
+        )
+        return True
+    return False
+
+
+async def _is_paid(user_id: int) -> bool:
+    user = await rq.get_user(user_id)
+    return bool(user and (user.payment_status == "paid" or user.is_paid))
 
 
 @router.message(CommandStart())
 async def command_start(message: Message) -> None:
     await rq.set_user(message.from_user.id)
-    if is_admin(message.from_user.id if message.from_user else None):
-        await message.answer(texts.ADMIN_WELCOME_TEXT, reply_markup=kb.admin_kb)
+    if await _reply_admin(message):
         return
-    user = await rq.get_user(message.from_user.id)
-    is_paid = bool(user and (user.payment_status == "paid" or user.is_paid))
-    if is_paid:
+    if await _is_paid(message.from_user.id):
         await message.answer(texts.ACCESS_TEXT, reply_markup=kb.user_kb(True))
         return
     await message.answer(texts.WELCOME_TEXT, reply_markup=kb.user_kb(False))
@@ -26,22 +40,17 @@ async def command_start(message: Message) -> None:
 
 @router.message(Command(commands="help"))
 async def command_help(message: Message) -> None:
-    if is_admin(message.from_user.id if message.from_user else None):
-        await message.answer(texts.ADMIN_WELCOME_TEXT, reply_markup=kb.admin_kb)
+    if await _reply_admin(message):
         return
-    user = await rq.get_user(message.from_user.id)
-    is_paid = bool(user and (user.payment_status == "paid" or user.is_paid))
+    is_paid = await _is_paid(message.from_user.id)
     await message.answer(texts.HELP_TEXT, reply_markup=kb.user_kb(is_paid))
 
 
 @router.message(F.text == texts.BUTTON_PAY)
 async def paid(message: Message) -> None:
-    if is_admin(message.from_user.id if message.from_user else None):
-        await message.answer(texts.ADMIN_WELCOME_TEXT, reply_markup=kb.admin_kb)
+    if await _reply_admin(message):
         return
-    user = await rq.get_user(message.from_user.id)
-    is_paid = bool(user and (user.payment_status == "paid" or user.is_paid))
-    if is_paid:
+    if await _is_paid(message.from_user.id):
         await message.answer(texts.ACCESS_TEXT, reply_markup=kb.user_kb(True))
         return
     await message.answer(texts.PAID_TEXT, reply_markup=kb.payment_kb)
@@ -49,22 +58,17 @@ async def paid(message: Message) -> None:
 
 @router.message(F.text == texts.BUTTON_SUPPORT)
 async def help_contact(message: Message) -> None:
-    if is_admin(message.from_user.id if message.from_user else None):
-        await message.answer(texts.ADMIN_WELCOME_TEXT, reply_markup=kb.admin_kb)
+    if await _reply_admin(message):
         return
-    user = await rq.get_user(message.from_user.id)
-    is_paid = bool(user and (user.payment_status == "paid" or user.is_paid))
+    is_paid = await _is_paid(message.from_user.id)
     await message.answer(texts.SUPPORT_TEXT, reply_markup=kb.user_kb(is_paid))
 
 
 @router.message(F.text == texts.BUTTON_INFO)
 async def info_repeat(message: Message) -> None:
-    if is_admin(message.from_user.id if message.from_user else None):
-        await message.answer(texts.ADMIN_WELCOME_TEXT, reply_markup=kb.admin_kb)
+    if await _reply_admin(message):
         return
-    user = await rq.get_user(message.from_user.id)
-    is_paid = bool(user and (user.payment_status == "paid" or user.is_paid))
-    if not is_paid:
+    if not await _is_paid(message.from_user.id):
         await message.answer(texts.DEFAULT_TEXT, reply_markup=kb.user_kb(False))
         return
     await message.answer(texts.ACCESS_TEXT, reply_markup=kb.user_kb(True))
@@ -72,9 +76,7 @@ async def info_repeat(message: Message) -> None:
 
 @router.message(F.text)
 async def any_message(message: Message) -> None:
-    if is_admin(message.from_user.id if message.from_user else None):
-        await message.answer(texts.ADMIN_WELCOME_TEXT, reply_markup=kb.admin_kb)
+    if await _reply_admin(message):
         return
-    user = await rq.get_user(message.from_user.id)
-    is_paid = bool(user and (user.payment_status == "paid" or user.is_paid))
+    is_paid = await _is_paid(message.from_user.id)
     await message.answer(texts.DEFAULT_TEXT, reply_markup=kb.user_kb(is_paid))
