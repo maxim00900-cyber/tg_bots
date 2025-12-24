@@ -23,7 +23,13 @@ def _set_payment_pending(user: User, paid_method: str, invoice_id: str | None) -
     user.invoice_id = invoice_id
     user.paid_method = paid_method
     user.is_paid = False
+    user.payment_status = "pending"
     user.paid_at = None
+
+
+def _set_payment_status(user: User, status: str) -> None:
+    user.is_paid = status == "paid"
+    user.payment_status = status
 
 
 async def set_user(user_id: int) -> None:
@@ -57,7 +63,7 @@ async def mark_paid_by_invoice(invoice_id: str, paid_method: str) -> User | None
         user = await session.scalar(select(User).where(User.invoice_id == str(invoice_id)))
         if not user:
             return None
-        user.is_paid = True
+        _set_payment_status(user, "paid")
         user.paid_method = paid_method
         user.paid_at = datetime.utcnow()
         await session.commit()
@@ -69,9 +75,42 @@ async def mark_paid_by_user(user_id: int, paid_method: str) -> User | None:
         user = await session.scalar(select(User).where(User.user_id == user_id))
         if not user:
             return None
-        user.is_paid = True
+        _set_payment_status(user, "paid")
         user.paid_method = paid_method
         user.paid_at = datetime.utcnow()
+        await session.commit()
+        return user
+
+
+async def mark_expired_by_invoice(invoice_id: str) -> User | None:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.invoice_id == str(invoice_id)))
+        if not user:
+            return None
+        _set_payment_status(user, "expired")
+        user.paid_at = None
+        await session.commit()
+        return user
+
+
+async def mark_failed_by_invoice(invoice_id: str) -> User | None:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.invoice_id == str(invoice_id)))
+        if not user:
+            return None
+        _set_payment_status(user, "failed")
+        user.paid_at = None
+        await session.commit()
+        return user
+
+
+async def mark_failed_by_user(user_id: int, paid_method: str | None = None) -> User | None:
+    async with async_session() as session:
+        user, _ = await _get_or_create_user(session, user_id)
+        _set_payment_status(user, "failed")
+        user.paid_at = None
+        if paid_method is not None:
+            user.paid_method = paid_method
         await session.commit()
         return user
 
@@ -81,10 +120,21 @@ async def reset_payment(user_id: int, paid_method: str | None = None) -> User | 
         user = await session.scalar(select(User).where(User.user_id == user_id))
         if not user:
             return None
-        user.is_paid = False
+        _set_payment_status(user, "failed")
         user.paid_at = None
         user.invoice_id = None
         if paid_method is not None:
             user.paid_method = paid_method
         await session.commit()
         return user
+
+
+async def get_pending_users(limit: int = 10) -> list[User]:
+    async with async_session() as session:
+        result = await session.scalars(
+            select(User)
+            .where(User.payment_status == "pending")
+            .order_by(User.id.desc())
+            .limit(limit)
+        )
+        return list(result)

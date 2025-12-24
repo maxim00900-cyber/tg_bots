@@ -1,38 +1,16 @@
-import asyncio
-import logging
-from typing import Any
-
-import aiohttp
 from aiogram import F, Router
 from aiogram.types import CallbackQuery
 
 from app import keyboards as kb
 from app import texts
-import app.database.requests as rq
-from app.cryptobot import get_shared_crypto_bot_client
+from app.services.payments import (
+    CryptoCheckStatus,
+    CryptoInvoiceStatus,
+    check_crypto_invoice,
+    create_crypto_invoice,
+)
 
 router = Router()
-CRYPTOBOT_ERRORS = (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError)
-
-
-async def _send_existing_invoice(callback: CallbackQuery, invoice_id: str) -> bool:
-    client = get_shared_crypto_bot_client()
-    try:
-        invoice = await client.get_invoice(invoice_id)
-    except CRYPTOBOT_ERRORS as exc:
-        logging.exception("CryptoBot get_invoice failed: %s", exc)
-        return False
-
-    if not invoice:
-        return False
-
-    status = invoice.get("status")
-    if status == "paid":
-        await _handle_paid_invoice(callback, invoice_id)
-        return True
-    if status == "active":
-        return await _send_payment_link_if_available(callback, invoice_id, invoice)
-    return False
 
 
 async def _safe_answer(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -41,58 +19,34 @@ async def _safe_answer(callback: CallbackQuery, text: str, reply_markup=None) ->
     await callback.message.answer(text, reply_markup=reply_markup)
 
 
-async def _handle_paid_invoice(callback: CallbackQuery, invoice_id: str) -> None:
-    await rq.mark_paid_by_invoice(invoice_id, "crypto")
-    await _safe_answer(callback, texts.ACCESS_TEXT)
-
-
-async def _send_payment_link_if_available(
-    callback: CallbackQuery,
-    invoice_id: str,
-    invoice: dict[str, Any],
-) -> bool:
-    pay_url = invoice.get("pay_url")
-    if not pay_url:
-        return False
-    await _safe_answer(
-        callback,
-        texts.PAY_USDT_TEXT,
-        reply_markup=kb.check_payment_kb(invoice_id, pay_url),
-    )
-    return True
-
-
 @router.callback_query(F.data == "pay_usdt")
 async def callback_usdt(callback: CallbackQuery) -> None:
     await callback.answer()
-    user = await rq.get_user(callback.from_user.id)
-    if user and user.is_paid:
-        await _safe_answer(callback, texts.ACCESS_TEXT)
+    result = await create_crypto_invoice(callback.from_user.id, texts.PRICE_USDT)
+    if result.status == CryptoInvoiceStatus.PAID:
+        await _safe_answer(callback, texts.ACCESS_TEXT, reply_markup=kb.user_kb(True))
         return
-
-    if user and user.invoice_id:
-        if await _send_existing_invoice(callback, user.invoice_id):
-            return
-
-    client = get_shared_crypto_bot_client()
-    try:
-        invoice = await client.create_invoice(
-            amount=texts.PRICE_USDT,
-            asset="USDT",
-            description="Доступ к сервису",
-            payload=str(callback.from_user.id),
-        )
-    except CRYPTOBOT_ERRORS as exc:
-        logging.exception("CryptoBot create_invoice failed: %s", exc)
+    if result.status == CryptoInvoiceStatus.ERROR:
         await _safe_answer(callback, texts.PAYMENT_ERROR_TEXT)
         return
-
-    await rq.set_invoice(callback.from_user.id, invoice["invoice_id"], "crypto")
-    pay_url = invoice["pay_url"]
+    if result.status == CryptoInvoiceStatus.ACTIVE and result.invoice_id and result.pay_url:
+        await _safe_answer(
+            callback,
+            texts.PAY_USDT_TEXT,
+            reply_markup=kb.check_payment_kb(result.invoice_id, result.pay_url),
+        )
+        return
+    if (
+        result.status != CryptoInvoiceStatus.CREATED
+        or not result.invoice_id
+        or not result.pay_url
+    ):
+        await _safe_answer(callback, texts.PAYMENT_ERROR_TEXT)
+        return
     await _safe_answer(
         callback,
         texts.PAY_USDT_TEXT,
-        reply_markup=kb.check_payment_kb(invoice["invoice_id"], pay_url),
+        reply_markup=kb.check_payment_kb(result.invoice_id, result.pay_url),
     )
 
 
@@ -100,28 +54,20 @@ async def callback_usdt(callback: CallbackQuery) -> None:
 async def callback_check_invoice(callback: CallbackQuery) -> None:
     await callback.answer()
     invoice_id = callback.data.split(":", 1)[1]
-    user = await rq.get_user(callback.from_user.id)
-    if not user or user.invoice_id != str(invoice_id):
+    result = await check_crypto_invoice(callback.from_user.id, invoice_id)
+    if result.status == CryptoCheckStatus.INVALID_USER:
         await _safe_answer(callback, texts.PAYMENT_ERROR_TEXT)
         return
-
-    client = get_shared_crypto_bot_client()
-    try:
-        invoice = await client.get_invoice(invoice_id)
-    except CRYPTOBOT_ERRORS as exc:
-        logging.exception("CryptoBot get_invoice failed: %s", exc)
+    if result.status in {CryptoCheckStatus.ERROR, CryptoCheckStatus.NOT_FOUND}:
         await _safe_answer(callback, texts.PAYMENT_ERROR_TEXT)
         return
-
-    if not invoice:
-        await _safe_answer(callback, texts.PAYMENT_ERROR_TEXT)
+    if result.status == CryptoCheckStatus.PAID:
+        await _safe_answer(callback, texts.ACCESS_TEXT, reply_markup=kb.user_kb(True))
         return
-
-    status = invoice.get("status")
-    if status == "paid":
-        await _handle_paid_invoice(callback, invoice_id)
-        return
-    if status == "expired":
+    if result.status == CryptoCheckStatus.EXPIRED:
         await _safe_answer(callback, texts.PAYMENT_EXPIRED_TEXT)
+        return
+    if result.status == CryptoCheckStatus.FAILED:
+        await _safe_answer(callback, texts.PAYMENT_FAILED_TEXT)
         return
     await _safe_answer(callback, texts.PAYMENT_PENDING_TEXT)

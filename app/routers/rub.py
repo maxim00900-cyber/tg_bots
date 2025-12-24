@@ -1,28 +1,19 @@
-import logging
-
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
 from app import keyboards as kb
 from app import texts
-from app.config import get_settings
-import app.database.requests as rq
+from app.services.payments import (
+    RubPaymentStatus,
+    RubReceiptSentStatus,
+    RubReceiptUploadStatus,
+    build_rub_receipt_sent,
+    check_rub_receipt_upload,
+    start_rub_payment,
+)
+from app.routers.admin_utils import is_admin
 
 router = Router()
-
-
-def _get_admin_chat_id() -> int | None:
-    settings = get_settings()
-    if settings.admin_chat_id is None:
-        logging.error("ADMIN_CHAT_ID is not configured")
-    return settings.admin_chat_id
-
-
-def _get_rub_pay_url() -> str | None:
-    settings = get_settings()
-    if not settings.rub_pay_url:
-        logging.error("RUB_PAY_URL is not configured")
-    return settings.rub_pay_url
 
 
 async def _safe_answer(callback: CallbackQuery, text: str, reply_markup=None) -> None:
@@ -34,57 +25,64 @@ async def _safe_answer(callback: CallbackQuery, text: str, reply_markup=None) ->
 @router.callback_query(F.data == "pay_rub")
 async def callback_rub(callback: CallbackQuery) -> None:
     await callback.answer()
-    user = await rq.get_user(callback.from_user.id)
-    if user and user.is_paid:
+    result = await start_rub_payment(callback.from_user.id)
+    if result.status == RubPaymentStatus.ALREADY_PAID:
         await _safe_answer(callback, texts.ACCESS_TEXT)
         return
 
-    rub_pay_url = _get_rub_pay_url()
-    if not rub_pay_url:
+    if result.status == RubPaymentStatus.DISABLED or not result.pay_url:
         await _safe_answer(callback, texts.PAYMENT_RUB_DISABLED_TEXT)
         return
 
-    await rq.set_rub_pending(callback.from_user.id)
     await _safe_answer(
         callback,
         texts.PAY_RUB_QR_TEXT,
-        reply_markup=kb.rub_payment_kb(rub_pay_url),
+        reply_markup=kb.rub_payment_kb(result.pay_url),
     )
 
 
 @router.callback_query(F.data == "rub_receipt_sent")
 async def callback_rub_receipt_sent(callback: CallbackQuery) -> None:
     await callback.answer()
-    admin_chat_id = _get_admin_chat_id()
-    if not admin_chat_id:
+    result = build_rub_receipt_sent(
+        callback.from_user.id,
+        callback.from_user.first_name,
+        callback.from_user.last_name,
+        callback.from_user.username,
+    )
+    if (
+        result.status == RubReceiptSentStatus.DISABLED
+        or not result.admin_chat_ids
+        or not any(is_admin(admin_id) for admin_id in result.admin_chat_ids)
+    ):
         await _safe_answer(callback, texts.PAYMENT_RUB_DISABLED_TEXT)
         return
 
-    user = callback.from_user
-    name = " ".join(part for part in [user.first_name, user.last_name] if part)
-    username = f"@{user.username}" if user.username else "без username"
-    await callback.bot.send_message(
-        admin_chat_id,
-        (
-            "Новая оплата в рублях.\n"
-            f"Пользователь: {name} ({username})\n"
-            f"ID: {user.id}\n"
-            "Пользователь нажал «Я отправил чек»."
-        ),
-    )
+    for admin_id in result.admin_chat_ids:
+        if is_admin(admin_id):
+            await callback.bot.send_message(
+                admin_id,
+                result.message or "",
+                reply_markup=kb.admin_action_kb(callback.from_user.id),
+            )
     await _safe_answer(callback, texts.RECEIPT_SENT_TEXT)
 
 
 @router.message(F.photo | F.document)
 async def receipt_message(message: Message) -> None:
-    user = await rq.get_user(message.from_user.id)
-    if not user or user.is_paid or user.paid_method != "rub":
+    result = await check_rub_receipt_upload(message.from_user.id)
+    if result.status == RubReceiptUploadStatus.IGNORED:
         return
 
-    admin_chat_id = _get_admin_chat_id()
-    if not admin_chat_id:
+    if (
+        result.status == RubReceiptUploadStatus.DISABLED
+        or not result.admin_chat_ids
+        or not any(is_admin(admin_id) for admin_id in result.admin_chat_ids)
+    ):
         await message.answer(texts.PAYMENT_RUB_DISABLED_TEXT)
         return
 
-    await message.copy_to(admin_chat_id)
+    for admin_id in result.admin_chat_ids:
+        if is_admin(admin_id):
+            await message.copy_to(admin_id)
     await message.answer(texts.RECEIPT_RECEIVED_TEXT)
