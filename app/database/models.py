@@ -1,11 +1,13 @@
 ﻿from datetime import datetime
-import os
-from sqlalchemy import BigInteger, String, Boolean
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///db.sqlite3")
-engine = create_async_engine(DATABASE_URL)
+from sqlalchemy import BigInteger, String, Boolean
+from sqlalchemy.ext.asyncio import AsyncAttrs, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from app.config import get_settings
+
+settings = get_settings()
+engine = create_async_engine(settings.database_url)
 async_session = async_sessionmaker(engine)
 
 
@@ -24,6 +26,7 @@ class User(Base):
     paid_at: Mapped[datetime | None] = mapped_column(nullable=True)
     invoice_id: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
 
-async def async_main():
+
+async def async_main() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

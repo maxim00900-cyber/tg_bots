@@ -13,37 +13,46 @@ from app.cryptobot import get_shared_crypto_bot_client
 router = Router()
 
 
+async def _send_existing_invoice(callback: CallbackQuery, invoice_id: str) -> bool:
+    client = get_shared_crypto_bot_client()
+    try:
+        invoice = await client.get_invoice(invoice_id)
+    except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as exc:
+        logging.exception("CryptoBot get_invoice failed: %s", exc)
+        return False
+
+    if not invoice:
+        return False
+
+    status = invoice.get("status")
+    if status == "paid":
+        await rq.mark_paid_by_invoice(invoice_id, "crypto")
+        await callback.message.answer(texts.ACCESS_TEXT)
+        return True
+    if status == "active":
+        pay_url = invoice.get("pay_url")
+        if pay_url:
+            await callback.message.answer(
+                texts.PAY_USDT_TEXT,
+                reply_markup=kb.check_payment_kb(invoice_id, pay_url),
+            )
+            return True
+    return False
+
+
 @router.callback_query(F.data == "pay_usdt")
-async def callback_usdt(callback: CallbackQuery):
+async def callback_usdt(callback: CallbackQuery) -> None:
     await callback.answer()
     user = await rq.get_user(callback.from_user.id)
     if user and user.is_paid:
         await callback.message.answer(texts.ACCESS_TEXT)
         return
 
-    client = get_shared_crypto_bot_client()
     if user and user.invoice_id:
-        try:
-            invoice = await client.get_invoice(user.invoice_id)
-        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as exc:
-            logging.exception("CryptoBot get_invoice failed: %s", exc)
-            invoice = None
+        if await _send_existing_invoice(callback, user.invoice_id):
+            return
 
-        if invoice:
-            status = invoice.get("status")
-            if status == "paid":
-                await rq.mark_paid_by_invoice(user.invoice_id, "crypto")
-                await callback.message.answer(texts.ACCESS_TEXT)
-                return
-            if status == "active":
-                pay_url = invoice.get("pay_url")
-                if pay_url:
-                    await callback.message.answer(
-                        texts.PAY_USDT_TEXT,
-                        reply_markup=kb.check_payment_kb(user.invoice_id, pay_url),
-                    )
-                    return
-
+    client = get_shared_crypto_bot_client()
     try:
         invoice = await client.create_invoice(
             amount=texts.PRICE_USDT,
@@ -65,7 +74,7 @@ async def callback_usdt(callback: CallbackQuery):
 
 
 @router.callback_query(F.data.startswith("check_invoice:"))
-async def callback_check_invoice(callback: CallbackQuery):
+async def callback_check_invoice(callback: CallbackQuery) -> None:
     await callback.answer()
     invoice_id = callback.data.split(":", 1)[1]
     user = await rq.get_user(callback.from_user.id)

@@ -1,50 +1,46 @@
 import logging
-import os
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 
 from app import keyboards as kb
 from app import texts
+from app.config import get_settings
 import app.database.requests as rq
 
 router = Router()
 
 
 def _get_admin_chat_id() -> int | None:
-    value = os.getenv("ADMIN_CHAT_ID")
-    if not value:
-        return None
-    try:
-        return int(value)
-    except ValueError:
-        logging.error("ADMIN_CHAT_ID is not a valid integer")
-        return None
+    settings = get_settings()
+    if settings.admin_chat_id is None:
+        logging.error("ADMIN_CHAT_ID is not configured")
+    return settings.admin_chat_id
 
 
 @router.callback_query(F.data == "pay_rub")
-async def callback_rub(callback: CallbackQuery):
+async def callback_rub(callback: CallbackQuery) -> None:
     await callback.answer()
     user = await rq.get_user(callback.from_user.id)
     if user and user.is_paid:
         await callback.message.answer(texts.ACCESS_TEXT)
         return
 
-    pay_url = os.getenv("RUB_PAY_URL")
-    if not pay_url:
+    settings = get_settings()
+    if not settings.rub_pay_url:
         logging.error("RUB_PAY_URL is not configured")
         await callback.message.answer(texts.PAYMENT_RUB_DISABLED_TEXT)
         return
 
     await rq.set_rub_pending(callback.from_user.id)
     await callback.message.answer(
-        texts.PAY_RUB_QR_TEXT.format(pay_url=pay_url),
-        reply_markup=kb.rub_payment_kb(pay_url),
+        texts.PAY_RUB_QR_TEXT,
+        reply_markup=kb.rub_payment_kb(settings.rub_pay_url),
     )
 
 
 @router.callback_query(F.data == "rub_receipt_sent")
-async def callback_rub_receipt_sent(callback: CallbackQuery):
+async def callback_rub_receipt_sent(callback: CallbackQuery) -> None:
     await callback.answer()
     admin_chat_id = _get_admin_chat_id()
     if not admin_chat_id:
@@ -67,7 +63,7 @@ async def callback_rub_receipt_sent(callback: CallbackQuery):
 
 
 @router.message(F.photo | F.document)
-async def receipt_message(message: Message):
+async def receipt_message(message: Message) -> None:
     user = await rq.get_user(message.from_user.id)
     if not user or user.is_paid or user.paid_method != "rub":
         return
