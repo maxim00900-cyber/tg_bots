@@ -1,5 +1,8 @@
 ﻿from __future__ import annotations
 
+import asyncio
+import logging
+
 import aiohttp
 
 from app.config import get_settings
@@ -29,18 +32,31 @@ class CryptoBotClient:
 
     async def _request(self, method: str, payload: dict) -> dict:
         session = await self._get_session()
-        async with session.post(f"{API_URL}/{method}", json=payload) as response:
-            if response.status >= 400:
-                text = await response.text()
-                raise RuntimeError(f"CryptoBot HTTP {response.status}: {text}")
-            content_type = response.headers.get("Content-Type", "")
-            if "application/json" not in content_type:
-                text = await response.text()
-                raise RuntimeError(f"CryptoBot non-JSON response: {text}")
-            data = await response.json()
-        if not data.get("ok"):
-            raise RuntimeError(data.get("error", "CryptoBot API error"))
-        return data["result"]
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                async with session.post(f"{API_URL}/{method}", json=payload) as response:
+                    if response.status >= 400:
+                        text = await response.text()
+                        raise RuntimeError(f"CryptoBot HTTP {response.status}: {text}")
+                    content_type = response.headers.get("Content-Type", "")
+                    if "application/json" not in content_type:
+                        text = await response.text()
+                        raise RuntimeError(f"CryptoBot non-JSON response: {text}")
+                    data = await response.json()
+                if not data.get("ok"):
+                    raise RuntimeError(data.get("error", "CryptoBot API error"))
+                return data["result"]
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                if attempt == max_attempts:
+                    raise
+                logging.warning(
+                    "CryptoBot request failed (attempt %s/%s): %s",
+                    attempt,
+                    max_attempts,
+                    exc,
+                )
+                await asyncio.sleep(0.5 * attempt)
 
     async def create_invoice(self, amount: float, asset: str, description: str, payload: str) -> dict:
         body = {

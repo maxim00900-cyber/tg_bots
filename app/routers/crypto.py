@@ -12,15 +12,19 @@ import app.database.requests as rq
 from app.cryptobot import get_shared_crypto_bot_client
 
 router = Router()
-CRYPTOBOT_ERRORS = (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError)
+NETWORK_ERRORS = (aiohttp.ClientError, asyncio.TimeoutError)
+API_ERRORS = (RuntimeError,)
 
 
 async def _send_existing_invoice(callback: CallbackQuery, invoice_id: str) -> bool:
     client = get_shared_crypto_bot_client()
     try:
         invoice = await client.get_invoice(invoice_id)
-    except CRYPTOBOT_ERRORS as exc:
-        logging.exception("CryptoBot get_invoice failed: %s", exc)
+    except NETWORK_ERRORS as exc:
+        logging.exception("CryptoBot get_invoice network failure: %s", exc)
+        return False
+    except API_ERRORS as exc:
+        logging.exception("CryptoBot get_invoice API failure: %s", exc)
         return False
 
     if not invoice:
@@ -82,9 +86,13 @@ async def callback_usdt(callback: CallbackQuery) -> None:
             description="Доступ к сервису",
             payload=str(callback.from_user.id),
         )
-    except CRYPTOBOT_ERRORS as exc:
-        logging.exception("CryptoBot create_invoice failed: %s", exc)
-        await _safe_answer(callback, texts.PAYMENT_ERROR_TEXT)
+    except NETWORK_ERRORS as exc:
+        logging.exception("CryptoBot create_invoice network failure: %s", exc)
+        await _safe_answer(callback, texts.PAYMENT_NETWORK_ERROR_TEXT)
+        return
+    except API_ERRORS as exc:
+        logging.exception("CryptoBot create_invoice API failure: %s", exc)
+        await _safe_answer(callback, texts.PAYMENT_API_ERROR_TEXT)
         return
 
     await rq.set_invoice(callback.from_user.id, invoice["invoice_id"], "crypto")
@@ -108,9 +116,13 @@ async def callback_check_invoice(callback: CallbackQuery) -> None:
     client = get_shared_crypto_bot_client()
     try:
         invoice = await client.get_invoice(invoice_id)
-    except CRYPTOBOT_ERRORS as exc:
-        logging.exception("CryptoBot get_invoice failed: %s", exc)
-        await _safe_answer(callback, texts.PAYMENT_ERROR_TEXT)
+    except NETWORK_ERRORS as exc:
+        logging.exception("CryptoBot get_invoice network failure: %s", exc)
+        await _safe_answer(callback, texts.PAYMENT_NETWORK_ERROR_TEXT)
+        return
+    except API_ERRORS as exc:
+        logging.exception("CryptoBot get_invoice API failure: %s", exc)
+        await _safe_answer(callback, texts.PAYMENT_API_ERROR_TEXT)
         return
 
     if not invoice:
