@@ -58,6 +58,17 @@ def get_settings() -> Settings:
         price_rub=int(os.getenv("PRICE_RUB", "269")),
         price_usdt=float(os.getenv("PRICE_USDT", "3.0")),
         price_currency=os.getenv("PRICE_CURRENCY", "₽"),
-        support_contact=os.getenv("SUPPORT_CONTACT", "@sergei_kk"),
+        support_contact=os.getenv("SUPPORT_CONTACT", ""),
         text_overrides=text_overrides,
     )
+
+
+def log_missing_settings(settings: Settings) -> None:
+    if not settings.support_contact:
+        logging.warning("SUPPORT_CONTACT is not configured")
+    if not settings.cryptobot_token:
+        logging.warning("CRYPTOBOT_TOKEN is not configured")
+    if not settings.rub_pay_url:
+        logging.warning("RUB_PAY_URL is not configured")
+    if not settings.admin_chat_ids:
+        logging.warning("ADMIN_CHAT_ID(S) is not configured")

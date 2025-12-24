@@ -3,7 +3,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 
-from app.config import get_settings
+from app.config import get_settings, log_missing_settings
 from app.routers import router
 from app.database.models import async_main
 from app.cryptobot import close_crypto_bot_client
@@ -21,6 +21,9 @@ async def main() -> None:
     settings = get_settings()
     if not settings.token:
         raise RuntimeError("TOKEN env var is not set")
+    if not settings.database_url:
+        raise RuntimeError("DATABASE_URL env var is not set")
+    log_missing_settings(settings)
 
     _setup_logging()
     await async_main()
