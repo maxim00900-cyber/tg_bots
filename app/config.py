@@ -7,6 +7,8 @@ import os
 
 from dotenv import load_dotenv
 
+from app.text_keys import TEXT_OVERRIDE_KEYS
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -41,63 +43,8 @@ def _parse_admin_chat_ids(value: str | None, fallback: str | None) -> tuple[int,
 @lru_cache
 def get_settings() -> Settings:
     load_dotenv()
-    text_keys = [
-        "WELCOME_TEXT",
-        "HELP_TEXT",
-        "PAID_TEXT",
-        "SUPPORT_TEXT",
-        "PAY_RUB_QR_TEXT",
-        "PAY_USDT_TEXT",
-        "ACCESS_TEXT",
-        "PAYMENT_PENDING_TEXT",
-        "PAYMENT_EXPIRED_TEXT",
-        "PAYMENT_FAILED_TEXT",
-        "PAYMENT_ERROR_TEXT",
-        "PAYMENT_RUB_DISABLED_TEXT",
-        "RECEIPT_RECEIVED_TEXT",
-        "RECEIPT_SENT_TEXT",
-        "DEFAULT_TEXT",
-        "ADMIN_WELCOME_TEXT",
-        "ADMIN_ONLY_TEXT",
-        "APPROVE_USAGE_TEXT",
-        "DENY_USAGE_TEXT",
-        "ADMIN_ALREADY_HANDLED_TEXT",
-        "APPROVE_SUCCESS_TEXT",
-        "DENY_SUCCESS_TEXT",
-        "USER_APPROVED_TEXT",
-        "USER_DENIED_TEXT",
-        "USER_NOT_FOUND_TEXT",
-        "BAN_USAGE_TEXT",
-        "UNBAN_USAGE_TEXT",
-        "BAN_SUCCESS_TEXT",
-        "UNBAN_SUCCESS_TEXT",
-        "BANNED_TEXT",
-        "ADMIN_ADD_USAGE_TEXT",
-        "ADMIN_REMOVE_USAGE_TEXT",
-        "ADMIN_ADDED_TEXT",
-        "ADMIN_REMOVED_TEXT",
-        "BUTTON_PAY",
-        "BUTTON_SUPPORT",
-        "BUTTON_INFO",
-        "BUTTON_APPROVE",
-        "BUTTON_DENY",
-        "BUTTON_BAN",
-        "BUTTON_ADMIN_APPROVE_HELP",
-        "BUTTON_ADMIN_DENY_HELP",
-        "BUTTON_ADMIN_BAN_HELP",
-        "BUTTON_ADMIN_UNBAN_HELP",
-        "BUTTON_ADMIN_ADD_HELP",
-        "BUTTON_ADMIN_REMOVE_HELP",
-        "PLACEHOLDER",
-        "INLINE_PAY_RUB",
-        "INLINE_PAY_USDT",
-        "INLINE_CHECK_PAYMENT",
-        "INLINE_PAY_QR",
-        "INLINE_SENT_RECEIPT",
-        "INLINE_PAY_CRYPTO",
-    ]
     text_overrides = {
-        key: value for key in text_keys if (value := os.getenv(key))
+        key: value for key in TEXT_OVERRIDE_KEYS if (value := os.getenv(key))
     }
     return Settings(
         token=os.getenv("TOKEN"),

@@ -31,7 +31,7 @@ def user_kb(is_paid: bool) -> ReplyKeyboardMarkup:
     return paid_kb if is_paid else main_kb
 
 
-admin_kb = ReplyKeyboardMarkup(
+admin_kb_owner = ReplyKeyboardMarkup(
     keyboard=[
         [
             KeyboardButton(text=texts.BUTTON_ADMIN_APPROVE_HELP),
@@ -44,6 +44,21 @@ admin_kb = ReplyKeyboardMarkup(
         [
             KeyboardButton(text=texts.BUTTON_ADMIN_ADD_HELP),
             KeyboardButton(text=texts.BUTTON_ADMIN_REMOVE_HELP),
+        ],
+    ],
+    resize_keyboard=True,
+    input_field_placeholder=texts.PLACEHOLDER,
+)
+
+admin_kb_staff = ReplyKeyboardMarkup(
+    keyboard=[
+        [
+            KeyboardButton(text=texts.BUTTON_ADMIN_APPROVE_HELP),
+            KeyboardButton(text=texts.BUTTON_ADMIN_DENY_HELP),
+        ],
+        [
+            KeyboardButton(text=texts.BUTTON_ADMIN_BAN_HELP),
+            KeyboardButton(text=texts.BUTTON_ADMIN_UNBAN_HELP),
         ],
     ],
     resize_keyboard=True,

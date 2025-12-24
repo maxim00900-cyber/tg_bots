@@ -8,7 +8,12 @@ from app import keyboards as kb
 from app import texts
 import app.database.requests as rq
 from app.database.models import User
-from app.routers.admin_utils import is_admin, is_staff
+from app.services.user_access import (
+    get_callback_user_id,
+    get_message_user_id,
+    is_owner_user,
+    is_staff_user,
+)
 
 router = Router()
 
@@ -69,7 +74,8 @@ async def _mark_admin_message(callback: CallbackQuery, status_text: str) -> None
 
 @router.message(Command(commands="approve"))
 async def approve_payment(message: Message) -> None:
-    if not await is_staff(message.from_user.id if message.from_user else None):
+    actor_id = get_message_user_id(message)
+    if not await is_staff_user(actor_id):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -89,7 +95,7 @@ async def approve_payment(message: Message) -> None:
         await message.answer(texts.ADMIN_BANNED_USER_TEXT)
         return
 
-    user = await rq.approve_by_staff(user_id, message.from_user.id, "rub")
+    user = await rq.approve_by_staff(user_id, actor_id, "rub")
     if not user:
         await message.answer(texts.ADMIN_ALREADY_HANDLED_TEXT)
         return
@@ -100,7 +106,8 @@ async def approve_payment(message: Message) -> None:
 
 @router.message(Command(commands="deny"))
 async def deny_payment(message: Message) -> None:
-    if not await is_staff(message.from_user.id if message.from_user else None):
+    actor_id = get_message_user_id(message)
+    if not await is_staff_user(actor_id):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -120,7 +127,7 @@ async def deny_payment(message: Message) -> None:
         await message.answer(texts.ADMIN_BANNED_USER_TEXT)
         return
 
-    user = await rq.deny_by_staff(user_id, message.from_user.id, paid_method="rub")
+    user = await rq.deny_by_staff(user_id, actor_id, paid_method="rub")
     if not user:
         await message.answer(texts.ADMIN_ALREADY_HANDLED_TEXT)
         return
@@ -131,7 +138,7 @@ async def deny_payment(message: Message) -> None:
 
 @router.message(Command(commands="ban"))
 async def ban_user(message: Message) -> None:
-    if not await is_staff(message.from_user.id if message.from_user else None):
+    if not await is_staff_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -147,7 +154,7 @@ async def ban_user(message: Message) -> None:
 
 @router.message(Command(commands="unban"))
 async def unban_user(message: Message) -> None:
-    if not await is_staff(message.from_user.id if message.from_user else None):
+    if not await is_staff_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -166,7 +173,7 @@ async def unban_user(message: Message) -> None:
 
 @router.message(Command(commands="admin_add"))
 async def add_admin(message: Message) -> None:
-    if not is_admin(message.from_user.id if message.from_user else None):
+    if not is_owner_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -181,7 +188,7 @@ async def add_admin(message: Message) -> None:
 
 @router.message(Command(commands="admin_remove"))
 async def remove_admin(message: Message) -> None:
-    if not is_admin(message.from_user.id if message.from_user else None):
+    if not is_owner_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -200,7 +207,7 @@ async def remove_admin(message: Message) -> None:
 
 @router.message(F.text == texts.BUTTON_ADMIN_APPROVE_HELP)
 async def approve_help(message: Message) -> None:
-    if not await is_staff(message.from_user.id if message.from_user else None):
+    if not await is_staff_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -209,7 +216,7 @@ async def approve_help(message: Message) -> None:
 
 @router.message(F.text == texts.BUTTON_ADMIN_DENY_HELP)
 async def deny_help(message: Message) -> None:
-    if not await is_staff(message.from_user.id if message.from_user else None):
+    if not await is_staff_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -218,7 +225,7 @@ async def deny_help(message: Message) -> None:
 
 @router.message(F.text == texts.BUTTON_ADMIN_BAN_HELP)
 async def ban_help(message: Message) -> None:
-    if not await is_staff(message.from_user.id if message.from_user else None):
+    if not await is_staff_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -227,7 +234,7 @@ async def ban_help(message: Message) -> None:
 
 @router.message(F.text == texts.BUTTON_ADMIN_UNBAN_HELP)
 async def unban_help(message: Message) -> None:
-    if not await is_staff(message.from_user.id if message.from_user else None):
+    if not await is_staff_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -236,7 +243,7 @@ async def unban_help(message: Message) -> None:
 
 @router.message(F.text == texts.BUTTON_ADMIN_ADD_HELP)
 async def admin_add_help(message: Message) -> None:
-    if not is_admin(message.from_user.id if message.from_user else None):
+    if not is_owner_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -245,7 +252,7 @@ async def admin_add_help(message: Message) -> None:
 
 @router.message(F.text == texts.BUTTON_ADMIN_REMOVE_HELP)
 async def admin_remove_help(message: Message) -> None:
-    if not is_admin(message.from_user.id if message.from_user else None):
+    if not is_owner_user(get_message_user_id(message)):
         await message.answer(texts.ADMIN_ONLY_TEXT)
         return
 
@@ -255,7 +262,8 @@ async def admin_remove_help(message: Message) -> None:
 @router.callback_query(F.data.startswith("admin_approve:"))
 async def approve_callback(callback: CallbackQuery) -> None:
     await callback.answer()
-    if not await is_staff(callback.from_user.id if callback.from_user else None):
+    actor_id = get_callback_user_id(callback)
+    if not await is_staff_user(actor_id):
         if callback.message:
             await callback.message.answer(texts.ADMIN_ONLY_TEXT)
         return
@@ -282,7 +290,7 @@ async def approve_callback(callback: CallbackQuery) -> None:
         await _mark_admin_message(callback, texts.ADMIN_BANNED_USER_TEXT)
         return
 
-    user = await rq.approve_by_staff(user_id, callback.from_user.id, "rub")
+    user = await rq.approve_by_staff(user_id, actor_id, "rub")
     if not user:
         if callback.message:
             await callback.message.answer(texts.ADMIN_ALREADY_HANDLED_TEXT)
@@ -301,7 +309,8 @@ async def approve_callback(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("admin_deny:"))
 async def deny_callback(callback: CallbackQuery) -> None:
     await callback.answer()
-    if not await is_staff(callback.from_user.id if callback.from_user else None):
+    actor_id = get_callback_user_id(callback)
+    if not await is_staff_user(actor_id):
         if callback.message:
             await callback.message.answer(texts.ADMIN_ONLY_TEXT)
         return
@@ -328,7 +337,7 @@ async def deny_callback(callback: CallbackQuery) -> None:
         await _mark_admin_message(callback, texts.ADMIN_BANNED_USER_TEXT)
         return
 
-    user = await rq.deny_by_staff(user_id, callback.from_user.id, paid_method="rub")
+    user = await rq.deny_by_staff(user_id, actor_id, paid_method="rub")
     if not user:
         if callback.message:
             await callback.message.answer(texts.ADMIN_ALREADY_HANDLED_TEXT)
@@ -347,7 +356,7 @@ async def deny_callback(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("admin_ban:"))
 async def ban_callback(callback: CallbackQuery) -> None:
     await callback.answer()
-    if not await is_staff(callback.from_user.id if callback.from_user else None):
+    if not await is_staff_user(get_callback_user_id(callback)):
         if callback.message:
             await callback.message.answer(texts.ADMIN_ONLY_TEXT)
         return

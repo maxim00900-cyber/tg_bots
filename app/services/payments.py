@@ -84,6 +84,8 @@ async def create_crypto_invoice(user_id: int, price: float) -> CryptoInvoiceResu
 
     if user and user.invoice_id and user.payment_status in (None, "pending"):
         existing = await _fetch_crypto_invoice(user.invoice_id)
+        if existing is None:
+            return CryptoInvoiceResult(status=CryptoInvoiceStatus.ERROR)
         if existing:
             status = existing.get("status")
             if status == "paid":
@@ -104,6 +106,8 @@ async def create_crypto_invoice(user_id: int, price: float) -> CryptoInvoiceResu
                 await rq.mark_expired_by_invoice(user.invoice_id)
             if status == "failed":
                 await rq.mark_failed_by_invoice(user.invoice_id)
+        else:
+            await rq.mark_failed_by_invoice(user.invoice_id)
 
     invoice = await _create_crypto_invoice(user_id, price)
     if not invoice:
@@ -204,10 +208,13 @@ async def _create_crypto_invoice(user_id: int, price: float) -> dict[str, Any] |
 async def _fetch_crypto_invoice(invoice_id: str) -> dict[str, Any] | None:
     client = get_shared_crypto_bot_client()
     try:
-        return await client.get_invoice(invoice_id)
+        invoice = await client.get_invoice(invoice_id)
     except CRYPTOBOT_ERRORS as exc:
         logging.exception("CryptoBot get_invoice failed: %s", exc)
         return None
+    if invoice is None:
+        return {}
+    return invoice
 
 
 def _get_rub_pay_url() -> str | None:

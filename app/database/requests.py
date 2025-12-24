@@ -1,25 +1,22 @@
 from datetime import datetime
+from typing import Literal
 
-from sqlalchemy import select, update
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import update
 
 from app.database.models import User, async_session
+from app.database.repository import (
+    get_admin_ids as repo_get_admin_ids,
+    get_or_create_user as repo_get_or_create_user,
+    get_user as repo_get_user,
+    get_user_by_invoice as repo_get_user_by_invoice,
+)
 
 
-async def _get_user(session: AsyncSession, user_id: int) -> User | None:
-    return await session.scalar(select(User).where(User.user_id == user_id))
+PaymentStatus = Literal["pending", "receipt_sent", "paid", "expired", "failed"]
+PaidMethod = Literal["rub", "crypto"]
 
 
-async def _get_or_create_user(session: AsyncSession, user_id: int) -> tuple[User, bool]:
-    user = await _get_user(session, user_id)
-    if user:
-        return user, False
-    user = User(user_id=user_id)
-    session.add(user)
-    return user, True
-
-
-def _set_payment_pending(user: User, paid_method: str, invoice_id: str | None) -> None:
+def _set_payment_pending(user: User, paid_method: PaidMethod, invoice_id: str | None) -> None:
     user.invoice_id = invoice_id
     user.paid_method = paid_method
     user.is_paid = False
@@ -29,52 +26,52 @@ def _set_payment_pending(user: User, paid_method: str, invoice_id: str | None) -
     user.decision_at = None
 
 
-def _set_payment_status(user: User, status: str) -> None:
+def _set_payment_status(user: User, status: PaymentStatus) -> None:
     user.is_paid = status == "paid"
     user.payment_status = status
 
 
 async def set_user(user_id: int) -> None:
     async with async_session() as session:
-        _, created = await _get_or_create_user(session, user_id)
+        _, created = await repo_get_or_create_user(session, user_id)
         if created:
             await session.commit()
 
 
 async def get_user(user_id: int) -> User | None:
     async with async_session() as session:
-        return await _get_user(session, user_id)
+        return await repo_get_user(session, user_id)
 
 
 async def is_user_banned(user_id: int) -> bool:
     async with async_session() as session:
-        user = await _get_user(session, user_id)
+        user = await repo_get_user(session, user_id)
         return bool(user and user.is_banned)
 
 
 async def is_user_admin(user_id: int) -> bool:
     async with async_session() as session:
-        user = await _get_user(session, user_id)
+        user = await repo_get_user(session, user_id)
         return bool(user and user.is_admin)
 
 
-async def set_invoice(user_id: int, invoice_id: str, paid_method: str) -> None:
+async def set_invoice(user_id: int, invoice_id: str, paid_method: PaidMethod) -> None:
     async with async_session() as session:
-        user, _ = await _get_or_create_user(session, user_id)
+        user, _ = await repo_get_or_create_user(session, user_id)
         _set_payment_pending(user, paid_method, str(invoice_id))
         await session.commit()
 
 
 async def set_rub_pending(user_id: int) -> None:
     async with async_session() as session:
-        user, _ = await _get_or_create_user(session, user_id)
+        user, _ = await repo_get_or_create_user(session, user_id)
         _set_payment_pending(user, "rub", None)
         await session.commit()
 
 
 async def add_admin(user_id: int) -> User:
     async with async_session() as session:
-        user, _ = await _get_or_create_user(session, user_id)
+        user, _ = await repo_get_or_create_user(session, user_id)
         user.is_admin = True
         await session.commit()
         return user
@@ -82,7 +79,7 @@ async def add_admin(user_id: int) -> User:
 
 async def remove_admin(user_id: int) -> User | None:
     async with async_session() as session:
-        user = await _get_user(session, user_id)
+        user = await repo_get_user(session, user_id)
         if not user:
             return None
         user.is_admin = False
@@ -92,13 +89,12 @@ async def remove_admin(user_id: int) -> User | None:
 
 async def get_admin_ids() -> list[int]:
     async with async_session() as session:
-        result = await session.scalars(select(User.user_id).where(User.is_admin.is_(True)))
-        return list(result)
+        return await repo_get_admin_ids(session)
 
 
 async def ban_user(user_id: int) -> User:
     async with async_session() as session:
-        user, _ = await _get_or_create_user(session, user_id)
+        user, _ = await repo_get_or_create_user(session, user_id)
         user.is_banned = True
         await session.commit()
         return user
@@ -106,7 +102,7 @@ async def ban_user(user_id: int) -> User:
 
 async def unban_user(user_id: int) -> User | None:
     async with async_session() as session:
-        user = await _get_user(session, user_id)
+        user = await repo_get_user(session, user_id)
         if not user:
             return None
         user.is_banned = False
@@ -116,7 +112,7 @@ async def unban_user(user_id: int) -> User | None:
 
 async def mark_rub_receipt_sent(user_id: int) -> User | None:
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.user_id == user_id))
+        user = await repo_get_user(session, user_id)
         if not user:
             return None
         if user.paid_method is None:
@@ -126,9 +122,9 @@ async def mark_rub_receipt_sent(user_id: int) -> User | None:
         return user
 
 
-async def mark_paid_by_invoice(invoice_id: str, paid_method: str) -> User | None:
+async def mark_paid_by_invoice(invoice_id: str, paid_method: PaidMethod) -> User | None:
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.invoice_id == str(invoice_id)))
+        user = await repo_get_user_by_invoice(session, invoice_id)
         if not user:
             return None
         _set_payment_status(user, "paid")
@@ -138,7 +134,7 @@ async def mark_paid_by_invoice(invoice_id: str, paid_method: str) -> User | None
         return user
 
 
-async def approve_by_staff(user_id: int, staff_id: int, paid_method: str) -> User | None:
+async def approve_by_staff(user_id: int, staff_id: int, paid_method: PaidMethod) -> User | None:
     async with async_session() as session:
         paid_at = datetime.utcnow()
         result = await session.execute(
@@ -167,7 +163,7 @@ async def approve_by_staff(user_id: int, staff_id: int, paid_method: str) -> Use
 
 async def mark_expired_by_invoice(invoice_id: str) -> User | None:
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.invoice_id == str(invoice_id)))
+        user = await repo_get_user_by_invoice(session, invoice_id)
         if not user:
             return None
         _set_payment_status(user, "expired")
@@ -178,7 +174,7 @@ async def mark_expired_by_invoice(invoice_id: str) -> User | None:
 
 async def mark_failed_by_invoice(invoice_id: str) -> User | None:
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.invoice_id == str(invoice_id)))
+        user = await repo_get_user_by_invoice(session, invoice_id)
         if not user:
             return None
         _set_payment_status(user, "failed")
@@ -187,9 +183,9 @@ async def mark_failed_by_invoice(invoice_id: str) -> User | None:
         return user
 
 
-async def mark_failed_by_user(user_id: int, paid_method: str | None = None) -> User | None:
+async def mark_failed_by_user(user_id: int, paid_method: PaidMethod | None = None) -> User | None:
     async with async_session() as session:
-        user, _ = await _get_or_create_user(session, user_id)
+        user, _ = await repo_get_or_create_user(session, user_id)
         _set_payment_status(user, "failed")
         user.paid_at = None
         if paid_method is not None:
@@ -198,7 +194,7 @@ async def mark_failed_by_user(user_id: int, paid_method: str | None = None) -> U
         return user
 
 
-async def deny_by_staff(user_id: int, staff_id: int, paid_method: str | None = None) -> User | None:
+async def deny_by_staff(user_id: int, staff_id: int, paid_method: PaidMethod | None = None) -> User | None:
     async with async_session() as session:
         values = {
             "is_paid": False,
