@@ -39,8 +39,8 @@ async def callback_usdt(callback: CallbackQuery):
                 pay_url = invoice.get("pay_url")
                 if pay_url:
                     await callback.message.answer(
-                        texts.PAY_USDT_TEXT.format(pay_url=pay_url),
-                        reply_markup=kb.check_payment_kb(user.invoice_id),
+                        texts.PAY_USDT_TEXT,
+                        reply_markup=kb.check_payment_kb(user.invoice_id, pay_url),
                     )
                     return
 
@@ -59,8 +59,8 @@ async def callback_usdt(callback: CallbackQuery):
     await rq.set_invoice(callback.from_user.id, invoice["invoice_id"], "crypto")
     pay_url = invoice["pay_url"]
     await callback.message.answer(
-        texts.PAY_USDT_TEXT.format(pay_url=pay_url),
-        reply_markup=kb.check_payment_kb(invoice["invoice_id"]),
+        texts.PAY_USDT_TEXT,
+        reply_markup=kb.check_payment_kb(invoice["invoice_id"], pay_url),
     )
 
 

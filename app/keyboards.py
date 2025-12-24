@@ -37,14 +37,18 @@ def rub_payment_kb(pay_url: str) -> InlineKeyboardMarkup:
         ]
     )
 
-def check_payment_kb(invoice_id: str) -> InlineKeyboardMarkup:
+def check_payment_kb(invoice_id: str, pay_url: str | None = None) -> InlineKeyboardMarkup:
+    buttons = []
+    if pay_url:
+        buttons.append([InlineKeyboardButton(text=texts.INLINE_PAY_CRYPTO, url=pay_url)])
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            *buttons,
             [
                 InlineKeyboardButton(
                     text=texts.INLINE_CHECK_PAYMENT,
                     callback_data=f"check_invoice:{invoice_id}",
                 )
-            ]
+            ],
         ]
     )
