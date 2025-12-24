@@ -24,6 +24,19 @@ payment_kb = InlineKeyboardMarkup(
     ]
 )
 
+def rub_payment_kb(pay_url: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=texts.INLINE_PAY_QR, url=pay_url)],
+            [
+                InlineKeyboardButton(
+                    text=texts.INLINE_SENT_RECEIPT,
+                    callback_data="rub_receipt_sent",
+                )
+            ],
+        ]
+    )
+
 def check_payment_kb(invoice_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

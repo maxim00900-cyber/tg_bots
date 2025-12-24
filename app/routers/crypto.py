@@ -1,8 +1,9 @@
-﻿import logging
+import asyncio
+import logging
 
+import aiohttp
 from aiogram import F, Router
-from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, Command
+from aiogram.types import CallbackQuery
 
 from app import keyboards as kb
 from app import texts
@@ -10,33 +11,6 @@ import app.database.requests as rq
 from app.cryptobot import get_shared_crypto_bot_client
 
 router = Router()
-
-
-@router.message(CommandStart())
-async def command_start(message: Message):
-    await rq.set_user(message.from_user.id)
-    await message.answer(texts.WELCOME_TEXT, reply_markup=kb.main_kb)
-
-
-@router.message(Command(commands="help"))
-async def command_help(message: Message):
-    await message.answer(texts.HELP_TEXT, reply_markup=kb.main_kb)
-
-
-@router.message(F.text == texts.BUTTON_PAY)
-async def paid(message: Message):
-    await message.answer(texts.PAID_TEXT, reply_markup=kb.payment_kb)
-
-
-@router.message(F.text == texts.BUTTON_SUPPORT)
-async def help_contact(message: Message):
-    await message.answer(texts.SUPPORT_TEXT, reply_markup=kb.main_kb)
-
-
-@router.callback_query(F.data == "pay_rub")
-async def callback_rub(callback: CallbackQuery):
-    await callback.answer()
-    await callback.message.answer(texts.PAY_RUB_TEXT)
 
 
 @router.callback_query(F.data == "pay_usdt")
@@ -51,7 +25,7 @@ async def callback_usdt(callback: CallbackQuery):
     if user and user.invoice_id:
         try:
             invoice = await client.get_invoice(user.invoice_id)
-        except RuntimeError as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as exc:
             logging.exception("CryptoBot get_invoice failed: %s", exc)
             invoice = None
 
@@ -77,7 +51,7 @@ async def callback_usdt(callback: CallbackQuery):
             description="Доступ к сервису",
             payload=str(callback.from_user.id),
         )
-    except RuntimeError as exc:
+    except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as exc:
         logging.exception("CryptoBot create_invoice failed: %s", exc)
         await callback.message.answer(texts.PAYMENT_ERROR_TEXT)
         return
@@ -102,7 +76,7 @@ async def callback_check_invoice(callback: CallbackQuery):
     client = get_shared_crypto_bot_client()
     try:
         invoice = await client.get_invoice(invoice_id)
-    except RuntimeError as exc:
+    except (aiohttp.ClientError, asyncio.TimeoutError, RuntimeError) as exc:
         logging.exception("CryptoBot get_invoice failed: %s", exc)
         await callback.message.answer(texts.PAYMENT_ERROR_TEXT)
         return
@@ -119,8 +93,3 @@ async def callback_check_invoice(callback: CallbackQuery):
         await callback.message.answer(texts.PAYMENT_EXPIRED_TEXT)
     else:
         await callback.message.answer(texts.PAYMENT_PENDING_TEXT)
-
-
-@router.message()
-async def any_message(message: Message):
-    await message.answer(texts.DEFAULT_TEXT, reply_markup=kb.main_kb)

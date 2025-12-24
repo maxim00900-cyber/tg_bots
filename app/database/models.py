@@ -22,7 +22,7 @@ class User(Base):
     is_paid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     paid_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(nullable=True)
-    invoice_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    invoice_id: Mapped[str | None] = mapped_column(String(50), unique=True, nullable=True)
 
 async def async_main():
     async with engine.begin() as conn:
