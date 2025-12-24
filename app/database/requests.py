@@ -1,45 +1,53 @@
 from datetime import datetime
-from app.database.models import async_session
-from app.database.models import User
+
 from sqlalchemy import select
+
+from app.database.models import User, async_session
+
+
+async def _get_user(session, user_id: int) -> User | None:
+    return await session.scalar(select(User).where(User.user_id == user_id))
+
+
+async def _get_or_create_user(session, user_id: int) -> tuple[User, bool]:
+    user = await _get_user(session, user_id)
+    if user:
+        return user, False
+    user = User(user_id=user_id)
+    session.add(user)
+    return user, True
+
+
+def _set_payment_pending(user: User, paid_method: str, invoice_id: str | None) -> None:
+    user.invoice_id = invoice_id
+    user.paid_method = paid_method
+    user.is_paid = False
+    user.paid_at = None
 
 
 async def set_user(user_id):
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.user_id == user_id))
-
-        if not user:
-            session.add(User(user_id=user_id))
+        _, created = await _get_or_create_user(session, user_id)
+        if created:
             await session.commit()
 
 
 async def get_user(user_id):
     async with async_session() as session:
-        return await session.scalar(select(User).where(User.user_id == user_id))
+        return await _get_user(session, user_id)
 
 
 async def set_invoice(user_id, invoice_id, paid_method):
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.user_id == user_id))
-        if not user:
-            user = User(user_id=user_id)
-            session.add(user)
-        user.invoice_id = str(invoice_id)
-        user.paid_method = paid_method
-        user.is_paid = False
-        user.paid_at = None
+        user, _ = await _get_or_create_user(session, user_id)
+        _set_payment_pending(user, paid_method, str(invoice_id))
         await session.commit()
+
 
 async def set_rub_pending(user_id):
     async with async_session() as session:
-        user = await session.scalar(select(User).where(User.user_id == user_id))
-        if not user:
-            user = User(user_id=user_id)
-            session.add(user)
-        user.invoice_id = None
-        user.paid_method = "rub"
-        user.is_paid = False
-        user.paid_at = None
+        user, _ = await _get_or_create_user(session, user_id)
+        _set_payment_pending(user, "rub", None)
         await session.commit()
 
 
