@@ -62,3 +62,29 @@ async def mark_paid_by_invoice(invoice_id: str, paid_method: str) -> User | None
         user.paid_at = datetime.utcnow()
         await session.commit()
         return user
+
+
+async def mark_paid_by_user(user_id: int, paid_method: str) -> User | None:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.user_id == user_id))
+        if not user:
+            return None
+        user.is_paid = True
+        user.paid_method = paid_method
+        user.paid_at = datetime.utcnow()
+        await session.commit()
+        return user
+
+
+async def reset_payment(user_id: int, paid_method: str | None = None) -> User | None:
+    async with async_session() as session:
+        user = await session.scalar(select(User).where(User.user_id == user_id))
+        if not user:
+            return None
+        user.is_paid = False
+        user.paid_at = None
+        user.invoice_id = None
+        if paid_method is not None:
+            user.paid_method = paid_method
+        await session.commit()
+        return user

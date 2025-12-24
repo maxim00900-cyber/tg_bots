@@ -18,24 +18,37 @@ def _get_admin_chat_id() -> int | None:
     return settings.admin_chat_id
 
 
+def _get_rub_pay_url() -> str | None:
+    settings = get_settings()
+    if not settings.rub_pay_url:
+        logging.error("RUB_PAY_URL is not configured")
+    return settings.rub_pay_url
+
+
+async def _safe_answer(callback: CallbackQuery, text: str, reply_markup=None) -> None:
+    if callback.message is None:
+        return
+    await callback.message.answer(text, reply_markup=reply_markup)
+
+
 @router.callback_query(F.data == "pay_rub")
 async def callback_rub(callback: CallbackQuery) -> None:
     await callback.answer()
     user = await rq.get_user(callback.from_user.id)
     if user and user.is_paid:
-        await callback.message.answer(texts.ACCESS_TEXT)
+        await _safe_answer(callback, texts.ACCESS_TEXT)
         return
 
-    settings = get_settings()
-    if not settings.rub_pay_url:
-        logging.error("RUB_PAY_URL is not configured")
-        await callback.message.answer(texts.PAYMENT_RUB_DISABLED_TEXT)
+    rub_pay_url = _get_rub_pay_url()
+    if not rub_pay_url:
+        await _safe_answer(callback, texts.PAYMENT_RUB_DISABLED_TEXT)
         return
 
     await rq.set_rub_pending(callback.from_user.id)
-    await callback.message.answer(
+    await _safe_answer(
+        callback,
         texts.PAY_RUB_QR_TEXT,
-        reply_markup=kb.rub_payment_kb(settings.rub_pay_url),
+        reply_markup=kb.rub_payment_kb(rub_pay_url),
     )
 
 
@@ -44,7 +57,7 @@ async def callback_rub_receipt_sent(callback: CallbackQuery) -> None:
     await callback.answer()
     admin_chat_id = _get_admin_chat_id()
     if not admin_chat_id:
-        await callback.message.answer(texts.PAYMENT_RUB_DISABLED_TEXT)
+        await _safe_answer(callback, texts.PAYMENT_RUB_DISABLED_TEXT)
         return
 
     user = callback.from_user
@@ -59,7 +72,7 @@ async def callback_rub_receipt_sent(callback: CallbackQuery) -> None:
             "Пользователь нажал «Я отправил чек»."
         ),
     )
-    await callback.message.answer(texts.RECEIPT_SENT_TEXT)
+    await _safe_answer(callback, texts.RECEIPT_SENT_TEXT)
 
 
 @router.message(F.photo | F.document)

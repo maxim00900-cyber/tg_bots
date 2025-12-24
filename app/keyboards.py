@@ -24,6 +24,7 @@ payment_kb = InlineKeyboardMarkup(
     ]
 )
 
+
 def rub_payment_kb(pay_url: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -36,6 +37,7 @@ def rub_payment_kb(pay_url: str) -> InlineKeyboardMarkup:
             ],
         ]
     )
+
 
 def check_payment_kb(invoice_id: str, pay_url: str | None = None) -> InlineKeyboardMarkup:
     buttons = []
